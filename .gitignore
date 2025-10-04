@@ -1,0 +1,23 @@
+# Rust / Cargo
+target/
+**/*.rs.bk
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local runtime data (keep sample data under data/words and data/rules tracked)
+data/config.json
+data/scores.json
+data/scores_backup*.json
+data/*.sqlite
+data/*.db
+
+# Logs / temp
+*.log
+tmp/
+.cache/
+

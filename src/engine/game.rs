@@ -1,0 +1,247 @@
+use std::fs;
+use std::path::Path;
+use std::time::{Duration, Instant};
+
+use anyhow::Result;
+use crossterm::event::{KeyCode, KeyEvent};
+use serde::{Deserialize, Serialize};
+
+use super::romaji::{RomajiMatcher, RomajiRules};
+use super::stats::{compute_wpm_stats, moving_speed_series};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WordEntry { pub jp: String, pub romas: Vec<String> }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WordsFile { pub title: String, pub version: u32, pub entries: Vec<WordEntry> }
+
+#[derive(Debug, Clone)]
+pub struct Split { pub word: String, pub sec: f64, pub miss: u32, pub keystrokes: u32 }
+
+#[derive(Debug, Clone)]
+pub struct GameConfig {
+    pub time_limit_sec: f64,
+    pub max_words: usize,
+    pub loss_ms_per_miss: u64,
+    pub fixed_chars: bool,
+    pub target_chars: usize,
+}
+impl Default for GameConfig {
+    fn default() -> Self { Self { time_limit_sec: 60.0, max_words: 50, loss_ms_per_miss: 200, fixed_chars: false, target_chars: 0 } }
+}
+
+pub fn load_words_json(path: &Path) -> Result<Vec<WordEntry>> {
+    let data = fs::read_to_string(path)?;
+    let wf: WordsFile = serde_json::from_str(&data)?;
+    Ok(wf.entries)
+}
+
+fn min_roma_len(e: &WordEntry) -> usize {
+    e.romas.iter().map(|s| s.len()).min().unwrap_or(0)
+}
+
+fn build_session_words(all: &[WordEntry], _rules: &RomajiRules, target_chars: usize) -> Vec<WordEntry> {
+    if target_chars == 0 || all.is_empty() { return all.to_vec(); }
+    let mut out: Vec<WordEntry> = Vec::new();
+    let mut sum = 0usize;
+    let mut i = 0usize;
+    while sum < target_chars && !all.is_empty() {
+        let e = &all[i % all.len()];
+        let len = min_roma_len(e);
+        out.push(e.clone());
+        sum += len;
+        i += 1;
+        if i > all.len() * 50 { break; } // safety
+    }
+    out
+}
+
+pub struct Game {
+    pub words: Vec<WordEntry>,
+    idx: usize,
+    typed: String,
+    correct_keystrokes: u32,
+    miss: u32,
+    pub splits: Vec<Split>,
+    started_at: Option<Instant>,
+    word_start: Option<Instant>,
+    finished: bool,
+    rules: RomajiRules,
+    matcher: Option<RomajiMatcher>,
+    speed_series: Vec<(f64,f64)>,
+    cfg: GameConfig,
+    last_miss_char: Option<char>,
+}
+
+impl Game {
+    pub fn new(cfg: GameConfig, words: Vec<WordEntry>, rules_path: &Path) -> Result<Self> {
+        let rules = RomajiRules::from_yaml_file(rules_path)?;
+        let mut words_sel = if cfg.fixed_chars && cfg.target_chars > 0 { build_session_words(&words, &rules, cfg.target_chars) } else { words };
+        if !words_sel.is_empty() && !cfg.fixed_chars { words_sel.truncate(cfg.max_words.min(words_sel.len())); }
+        Ok(Self{
+            words: words_sel,
+            idx: 0,
+            typed: String::new(),
+            correct_keystrokes: 0,
+            miss: 0,
+            splits: vec![],
+            started_at: None,
+            word_start: None,
+            finished: false,
+            rules,
+            matcher: None,
+            speed_series: vec![],
+            cfg,
+            last_miss_char: None,
+        })
+    }
+
+    pub fn start(&mut self) {
+        self.started_at = Some(Instant::now());
+        self.word_start = Some(Instant::now());
+        if let Some(w) = self.words.get(self.idx) {
+            self.matcher = Some(RomajiMatcher::new(&w.jp, &w.romas, &self.rules));
+        }
+    }
+
+    pub fn on_tick(&mut self) {
+        if self.finished { return; }
+        let t = self.elapsed_secs();
+        let cps = if t>0.0 { self.correct_keystrokes as f64 / t } else { 0.0 };
+        self.speed_series.push((t,cps));
+        let fixed_done = self.cfg.fixed_chars && (self.correct_keystrokes as usize) >= self.cfg.target_chars;
+        let all_words_done = self.idx >= self.words.len() || self.idx >= self.cfg.max_words;
+        if (self.cfg.fixed_chars && fixed_done) || (!self.cfg.fixed_chars && all_words_done) { self.finished = true; }
+    }
+
+    pub fn handle_key(&mut self, key: KeyEvent) -> Result<bool> {
+        if self.finished { return Ok(true); }
+        match key.code {
+            KeyCode::Esc => { self.finished = true; return Ok(true); }
+            KeyCode::Char(ch) => {
+                let c = ch.to_ascii_lowercase();
+                if let Some(m) = &mut self.matcher { 
+                    match m.input_char(c) {
+                        super::romaji::InputResult::Correct => { self.typed.push(c); self.correct_keystrokes+=1; self.last_miss_char=None; },
+                        super::romaji::InputResult::Miss => { self.miss+=1; self.penalize_time(); self.last_miss_char = Some(c); },
+                        super::romaji::InputResult::Complete => {
+                            self.typed.push(c); self.correct_keystrokes+=1; self.last_miss_char=None;
+                            self.finish_word();
+                        },
+                        super::romaji::InputResult::Noop => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(self.finished)
+    }
+
+    fn penalize_time(&mut self) {
+        // Add a phantom delay by shifting timers backward
+        if let Some(ws) = &mut self.word_start {
+            *ws -= Duration::from_millis(self.cfg.loss_ms_per_miss);
+        }
+        if let Some(st) = &mut self.started_at {
+            *st -= Duration::from_millis(self.cfg.loss_ms_per_miss);
+        }
+    }
+
+    fn finish_word(&mut self) {
+        if let Some(ws) = self.word_start.take() {
+            let sec = ws.elapsed().as_secs_f64();
+            let word = self.words[self.idx].jp.clone();
+            let miss = self.matcher.as_ref().map(|m| m.miss_count).unwrap_or(0);
+            let ks = self.matcher.as_ref().map(|m| m.example_roma().len() as u32).unwrap_or(0);
+            self.splits.push(Split{word, sec, miss, keystrokes: ks});
+        }
+        self.idx += 1;
+        self.typed.clear();
+        self.word_start = Some(Instant::now());
+        if self.idx < self.words.len() && self.idx < self.cfg.max_words {
+            let w = &self.words[self.idx];
+            self.matcher = Some(RomajiMatcher::new(&w.jp, &w.romas, &self.rules));
+        } else {
+            if self.cfg.fixed_chars {
+                // wrap to start for fixed keystrokes mode
+                self.idx = 0;
+                if let Some(w) = self.words.get(self.idx) {
+                    self.matcher = Some(RomajiMatcher::new(&w.jp, &w.romas, &self.rules));
+                } else {
+                    self.finished = true;
+                }
+            } else {
+                self.finished = true;
+            }
+        }
+    }
+
+    pub fn finish_record(&self) -> crate::store::json::ScoreRecord {
+        let time_sec = self.elapsed_secs();
+        let timeloss_sec = (self.cfg.loss_ms_per_miss as f64 * self.miss as f64)/1000.0;
+        let (wpm_top, wpm_worst) = compute_wpm_stats(&self.splits);
+        crate::store::json::ScoreRecord {
+            mode: "basic_common".into(),
+            datetime: chrono::Local::now().to_rfc3339(),
+            time_sec,
+            miss: self.miss,
+            timeloss_sec,
+            splits: self.splits.iter().map(|s| crate::store::json::SplitRec { word: s.word.clone(), sec: s.sec, miss: s.miss }).collect(),
+            wpm_top, wpm_worst,
+            rank: super::level::estimate_rank(self.avg_cps()).to_string(),
+            speed_series: Some(self.speed_series.clone()),
+            word_display: None,
+        }
+    }
+
+    pub fn elapsed_secs(&self) -> f64 { self.started_at.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0) }
+    pub fn time_left_secs(&self) -> f64 { (self.cfg.time_limit_sec - self.elapsed_secs()).max(0.0) }
+    pub fn current_level(&self) -> String { super::level::estimate_rank(self.avg_cps()).to_string() }
+    pub fn miss(&self) -> u32 { self.miss }
+    pub fn typed(&self) -> &str { &self.typed }
+    pub fn progress_ratio(&self) -> f64 {
+        if self.cfg.fixed_chars {
+            if self.cfg.target_chars == 0 { return 0.0; }
+            (self.correct_keystrokes as f64 / self.cfg.target_chars as f64).clamp(0.0, 1.0)
+        } else {
+            let denom = (self.words.len().min(self.cfg.max_words)).max(1);
+            (self.idx as f64 / denom as f64).clamp(0.0, 1.0)
+        }
+    }
+    pub fn current_line_display(&self) -> String {
+        let start = self.idx.saturating_sub(3);
+        let end = (self.idx+4).min(self.words.len());
+        let mut s = String::new();
+        for i in start..end {
+            if i==self.idx { s.push('['); }
+            s.push_str(&self.words[i].jp);
+            if i==self.idx { s.push(']'); }
+            s.push(' ');
+        }
+        s
+    }
+    pub fn current_roma_line(&self) -> String {
+        if let Some(w) = self.words.get(self.idx) {
+            if let Some(m) = &self.matcher { return m.best_candidate(); }
+            w.romas.get(0).cloned().unwrap_or_default()
+        } else { String::new() }
+    }
+    pub fn split_table_text(&self) -> String {
+        let mut s = String::new();
+        for (i, sp) in self.splits.iter().enumerate() {
+            s.push_str(&format!("{:>2} {}  {:>6.3}s  miss {}
+", i+1, sp.word, sp.sec, sp.miss));
+        }
+        s
+    }
+    fn avg_cps(&self) -> f64 { 
+        let t = self.elapsed_secs();
+        if t>0.0 { self.correct_keystrokes as f64 / t } else {0.0}
+    }
+    pub fn current_index(&self) -> usize { self.idx }
+    pub fn words_len(&self) -> usize { self.words.len() }
+    pub fn speed_points(&self) -> &[(f64,f64)] { &self.speed_series }
+    pub fn current_typed_len(&self) -> usize { self.typed.len() }
+    pub fn last_miss_char(&self) -> Option<char> { self.last_miss_char }
+    pub fn current_typed_total(&self) -> u32 { self.correct_keystrokes }
+}

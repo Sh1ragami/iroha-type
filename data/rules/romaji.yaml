@@ -1,0 +1,20 @@
+kana_rules:
+  っ: { type: sokuon }
+  ー: { type: chouon }
+  ん:
+    patterns: ["n'","nn","n"]
+yure:
+  し: ["shi","si"]
+  しゃ: ["sha","sya"]
+  しゅ: ["shu","syu"]
+  しょ: ["sho","syo"]
+  ち: ["chi","ti"]
+  ちゃ: ["cha","tya"]
+  ちゅ: ["chu","tyu"]
+  ちょ: ["cho","tyo"]
+  つ: ["tsu","tu"]
+  じ: ["ji","zi"]
+  ふ: ["fu","hu"]
+special:
+  n_patterns: ["n'","nn","n"]
+
