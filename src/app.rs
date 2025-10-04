@@ -25,6 +25,7 @@ pub struct App {
     pub scorebook: ScoreBook,
     pub last_result: Option<ScoreRecord>,
     pub cfg: AppConfig,
+    #[allow(dead_code)]
     theme: Theme,
     pub anim_tick: u64,
     pub words: Vec<WordEntry>,

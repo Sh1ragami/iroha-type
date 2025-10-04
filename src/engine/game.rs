@@ -7,7 +7,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use serde::{Deserialize, Serialize};
 
 use super::romaji::{RomajiMatcher, RomajiRules};
-use super::stats::{compute_wpm_stats, moving_speed_series};
+use super::stats::compute_wpm_stats;
 use rand::seq::SliceRandom;
 use crate::store::json::KeyEv;
 
