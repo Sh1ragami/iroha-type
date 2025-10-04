@@ -10,6 +10,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1),  // key guide
+            Constraint::Length(2),  // top spacer
             Constraint::Min(3),     // title area
             Constraint::Length(1),  // footer
         ])
@@ -23,13 +24,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     ]);
     f.render_widget(Paragraph::new(guide), v[0]);
 
-    let center = v[1];
-    let title_line = Line::from(gradient_spans_static(&app.cfg.app_name));
-    let tag = Line::from("Japanese Typing TUI").style(Style::default().fg(Color::Gray));
-    let body = vec![title_line, tag];
-    let title = Paragraph::new(body)
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL));
+    // spacer row
+    f.render_widget(Paragraph::new(""), v[1]);
+
+    let center = v[2];
+    let mut body: Vec<Line> = ascii_title_lines(&app.cfg.app_name);
+    body.push(Line::from(""));
+    body.push(Line::from("Japanese Typing TUI").style(Style::default().fg(Color::Gray)));
+    let title = Paragraph::new(body).alignment(Alignment::Center);
     f.render_widget(title, center);
 
     let foot = if let Some(r) = &app.last_result {
@@ -40,22 +42,37 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     } else {
         Paragraph::new(Line::from("Press G to begin.")).alignment(Alignment::Center)
     };
-    f.render_widget(foot, v[2]);
+    f.render_widget(foot, v[3]);
 }
 
-fn palette() -> [Color; 6] {
-    [Color::LightCyan, Color::Cyan, Color::LightBlue, Color::White, Color::Gray, Color::LightMagenta]
-}
-
-fn gradient_spans_static(text: &str) -> Vec<Span<'static>> {
-    // Soft, non-animated gradient (fixed offset)
-    let pal = palette();
-    let off = 2usize; // fixed to avoid blinking
-    text.chars()
+fn ascii_title_lines(name: &str) -> Vec<Line<'static>> {
+    // 5x5 block font (soft two-tone, wider tracking)
+    let text = name.to_uppercase();
+    let rows = 5usize;
+    let mut out: Vec<String> = vec![String::new(); rows];
+    for ch in text.chars() {
+        let pat: [&str;5] = match ch {
+            'A' => [" ███ ", "█   █", "█████", "█   █", "█   █"],
+            'E' => ["█████", "█    ", "████ ", "█    ", "█████"],
+            'H' => ["█   █", "█   █", "█████", "█   █", "█   █"],
+            'I' => ["█████", "  █  ", "  █  ", "  █  ", "█████"],
+            'O' => ["█████", "█   █", "█   █", "█   █", "█████"],
+            'P' => ["████ ", "█   █", "████ ", "█    ", "█    "],
+            'R' => ["████ ", "█   █", "████ ", "█  █ ", "█   █"],
+            'T' => ["█████", "  █  ", "  █  ", "  █  ", "  █  "],
+            'Y' => ["█   █", " █ █ ", "  █  ", "  █  ", "  █  "],
+            ' ' => ["     ", "     ", "     ", "     ", "     "],
+            _ => ["     ", "     ", "     ", "     ", "     "],
+        };
+        for r in 0..rows {
+            out[r].push_str(pat[r]);
+            out[r].push(' ');
+            out[r].push(' '); // extra tracking for美観
+        }
+    }
+    let row_colors = [Color::LightCyan, Color::White, Color::LightBlue, Color::White, Color::Gray];
+    out.into_iter()
         .enumerate()
-        .map(|(i, ch)| {
-            let c = if ch == ' ' { Color::Gray } else { pal[(i + off) % pal.len()] };
-            Span::styled(ch.to_string(), Style::default().fg(c).add_modifier(Modifier::BOLD))
-        })
+        .map(|(i, s)| Line::from(Span::styled(s, Style::default().fg(row_colors[i]).add_modifier(Modifier::BOLD))))
         .collect()
 }
