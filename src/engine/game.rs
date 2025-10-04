@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use super::romaji::{RomajiMatcher, RomajiRules};
 use super::stats::{compute_wpm_stats, moving_speed_series};
+use rand::seq::SliceRandom;
+use crate::store::json::KeyEv;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WordEntry { pub jp: String, pub romas: Vec<String> }
@@ -41,17 +43,19 @@ fn min_roma_len(e: &WordEntry) -> usize {
 }
 
 fn build_session_words(all: &[WordEntry], _rules: &RomajiRules, target_chars: usize) -> Vec<WordEntry> {
-    if target_chars == 0 || all.is_empty() { return all.to_vec(); }
+    if all.is_empty() { return vec![]; }
+    let mut rng = rand::thread_rng();
+    let mut pool: Vec<WordEntry> = all.to_vec();
+    pool.shuffle(&mut rng);
+    if target_chars == 0 { return pool; }
     let mut out: Vec<WordEntry> = Vec::new();
     let mut sum = 0usize;
-    let mut i = 0usize;
-    while sum < target_chars && !all.is_empty() {
-        let e = &all[i % all.len()];
+    // cycle through shuffled pool until reaching/exceeding target_chars
+    for e in pool.iter().cycle() {
         let len = min_roma_len(e);
         out.push(e.clone());
         sum += len;
-        i += 1;
-        if i > all.len() * 50 { break; } // safety
+        if sum >= target_chars || out.len() > all.len()*3 { break; }
     }
     out
 }
@@ -71,6 +75,7 @@ pub struct Game {
     speed_series: Vec<(f64,f64)>,
     cfg: GameConfig,
     last_miss_char: Option<char>,
+    replay: Vec<KeyEv>,
 }
 
 impl Game {
@@ -93,12 +98,14 @@ impl Game {
             speed_series: vec![],
             cfg,
             last_miss_char: None,
+            replay: vec![],
         })
     }
 
     pub fn start(&mut self) {
-        self.started_at = Some(Instant::now());
-        self.word_start = Some(Instant::now());
+        // 計測は最初の打鍵で開始するため、ここでは開始しない
+        self.started_at = None;
+        self.word_start = None;
         if let Some(w) = self.words.get(self.idx) {
             self.matcher = Some(RomajiMatcher::new(&w.jp, &w.romas, &self.rules));
         }
@@ -120,12 +127,21 @@ impl Game {
             KeyCode::Esc => { self.finished = true; return Ok(true); }
             KeyCode::Char(ch) => {
                 let c = ch.to_ascii_lowercase();
+                // 最初の打鍵で計測開始
+                if self.started_at.is_none() {
+                    self.started_at = Some(Instant::now());
+                    self.word_start = Some(Instant::now());
+                }
                 if let Some(m) = &mut self.matcher { 
                     match m.input_char(c) {
-                        super::romaji::InputResult::Correct => { self.typed.push(c); self.correct_keystrokes+=1; self.last_miss_char=None; },
-                        super::romaji::InputResult::Miss => { self.miss+=1; self.penalize_time(); self.last_miss_char = Some(c); },
+                        super::romaji::InputResult::Correct => {
+                            self.typed.push(c); self.correct_keystrokes+=1; self.last_miss_char=None; self.push_ev(c, true);
+                            if self.cfg.fixed_chars && (self.correct_keystrokes as usize) >= self.cfg.target_chars { self.finished = true; return Ok(true); }
+                        },
+                        super::romaji::InputResult::Miss => { self.miss+=1; self.penalize_time(); self.last_miss_char = Some(c); self.push_ev(c, false); },
                         super::romaji::InputResult::Complete => {
-                            self.typed.push(c); self.correct_keystrokes+=1; self.last_miss_char=None;
+                            self.typed.push(c); self.correct_keystrokes+=1; self.last_miss_char=None; self.push_ev(c, true);
+                            if self.cfg.fixed_chars && (self.correct_keystrokes as usize) >= self.cfg.target_chars { self.finished = true; return Ok(true); }
                             self.finish_word();
                         },
                         super::romaji::InputResult::Noop => {}
@@ -162,17 +178,8 @@ impl Game {
             let w = &self.words[self.idx];
             self.matcher = Some(RomajiMatcher::new(&w.jp, &w.romas, &self.rules));
         } else {
-            if self.cfg.fixed_chars {
-                // wrap to start for fixed keystrokes mode
-                self.idx = 0;
-                if let Some(w) = self.words.get(self.idx) {
-                    self.matcher = Some(RomajiMatcher::new(&w.jp, &w.romas, &self.rules));
-                } else {
-                    self.finished = true;
-                }
-            } else {
-                self.finished = true;
-            }
+            // fixed_charsでも周回せず終了（表示は目標打数を超える最後の語まで）
+            self.finished = true;
         }
     }
 
@@ -191,6 +198,7 @@ impl Game {
             rank: super::level::estimate_rank(self.avg_cps()).to_string(),
             speed_series: Some(self.speed_series.clone()),
             word_display: None,
+            replay: if self.replay.is_empty() { None } else { Some(self.replay.clone()) },
         }
     }
 
@@ -226,6 +234,22 @@ impl Game {
             w.romas.get(0).cloned().unwrap_or_default()
         } else { String::new() }
     }
+    pub fn current_jp_progress(&self) -> (String, Option<char>, String) {
+        if let Some(w) = self.words.get(self.idx) {
+            let jp = &w.jp;
+            let roma = self.current_roma_line();
+            let total = roma.len().max(1);
+            let typed = self.current_typed_len().min(total);
+            let chars: Vec<char> = jp.chars().collect();
+            let n = chars.len().max(1);
+            let mut pos = ((typed as f64 / total as f64) * n as f64).floor() as usize;
+            if pos >= n { pos = n.saturating_sub(1); }
+            let done: String = if pos>0 { chars[..pos].iter().collect() } else { String::new() };
+            let next = if typed >= total && n>0 { None } else { Some(chars[pos]) };
+            let rest: String = if typed >= total { String::new() } else { chars[pos+1..].iter().collect() };
+            (done, next, rest)
+        } else { (String::new(), None, String::new()) }
+    }
     pub fn split_table_text(&self) -> String {
         let mut s = String::new();
         for (i, sp) in self.splits.iter().enumerate() {
@@ -244,4 +268,9 @@ impl Game {
     pub fn current_typed_len(&self) -> usize { self.typed.len() }
     pub fn last_miss_char(&self) -> Option<char> { self.last_miss_char }
     pub fn current_typed_total(&self) -> u32 { self.correct_keystrokes }
+
+    fn push_ev(&mut self, c: char, ok: bool) {
+        let t = self.elapsed_secs();
+        self.replay.push(KeyEv{ t, c: c.to_string(), ok, w: self.idx });
+    }
 }

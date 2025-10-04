@@ -14,7 +14,7 @@ use store::json::{ScoreBook, ScoreRecord};
 use util::config::AppConfig;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Screen { Top, Play, Result, Ranking, Settings, Help }
+pub enum Screen { Top, Play, Result, Ranking, Details, Settings, Help }
 
 pub struct App {
     pub screen: Screen,
@@ -25,6 +25,8 @@ pub struct App {
     pub cfg: AppConfig,
     theme: Theme,
     pub anim_tick: u64,
+    pub words: Vec<WordEntry>,
+    pub replay: Option<ReplayState>,
 }
 
 #[derive(Clone, Copy)]
@@ -60,6 +62,8 @@ pub fn run(terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<std::io::S
         cfg,
         theme: Theme::default(),
         anim_tick: 0,
+        words: words.clone(),
+        replay: None,
     };
 
     let mut last_tick = Instant::now();
@@ -75,6 +79,17 @@ pub fn run(terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<std::io::S
         }
         if last_tick.elapsed() >= tick_rate {
             if let Some(g) = &mut app.game { g.on_tick(); }
+            // replay time update
+            if matches!(app.screen, Screen::Details) {
+                if let (Some(rep), Some(rec)) = (&mut app.replay, &app.last_result) {
+                    if rep.playing {
+                        rep.time += tick_rate.as_secs_f64() * rep.speed;
+                        if let Some(evs) = &rec.replay {
+                            while rep.ev_idx + 1 < evs.len() && evs[rep.ev_idx + 1].t <= rep.time { rep.ev_idx += 1; }
+                        }
+                    }
+                }
+            }
             app.anim_tick = app.anim_tick.wrapping_add(1);
             last_tick = Instant::now();
         }
@@ -114,7 +129,8 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>, rules_path: 
                     app.scorebook.update_with(record.clone());
                     app.scorebook.save()?;
                     app.last_result = Some(record);
-                    app.screen = Screen::Result;
+                    // プレイ終了後はランキング画面へ直接遷移
+                    app.screen = Screen::Ranking;
                 }
             }
         }
@@ -128,6 +144,19 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>, rules_path: 
         Screen::Ranking => {
             match key.code {
                 KeyCode::Esc => app.screen = Screen::Top,
+                KeyCode::Enter => { app.screen = Screen::Details; if app.replay.is_none() { app.replay = Some(ReplayState::default()); } },
+                _ => {}
+            }
+        }
+        Screen::Details => {
+            match key.code {
+                KeyCode::Esc => app.screen = Screen::Top,
+                KeyCode::Char('r') => app.screen = Screen::Ranking,
+                KeyCode::Char(' ') => { if let Some(rep)=&mut app.replay { rep.playing = !rep.playing; } },
+                KeyCode::Left => { if let Some(rep)=&mut app.replay { rep.ev_idx = rep.ev_idx.saturating_sub(1); rep.playing=false; } },
+                KeyCode::Right => { if let Some(rep)=&mut app.replay { rep.ev_idx = rep.ev_idx.saturating_add(1); rep.playing=false; } },
+                KeyCode::Char('+') => { if let Some(rep)=&mut app.replay { rep.speed = (rep.speed*1.25).min(4.0);} },
+                KeyCode::Char('-') => { if let Some(rep)=&mut app.replay { rep.speed = (rep.speed/1.25).max(0.25);} },
                 _ => {}
             }
         }
@@ -157,6 +186,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         Screen::Play => ui::play::draw(f, app),
         Screen::Result => ui::result::draw(f, app),
         Screen::Ranking => ui::ranking::draw(f, app),
+        Screen::Details => ui::details::draw(f, app),
         Screen::Settings => ui::settings::draw(f, app),
         Screen::Help => {
             let layout = Layout::default().direction(Direction::Vertical).constraints([
@@ -169,3 +199,7 @@ fn draw(f: &mut Frame, app: &mut App) {
 }
 
 pub use ui::*;
+
+#[derive(Debug, Clone)]
+pub struct ReplayState { pub ev_idx: usize, pub playing: bool, pub speed: f64, pub time: f64 }
+impl Default for ReplayState { fn default()->Self{ Self{ ev_idx:0, playing:true, speed:1.0, time:0.0 } }}

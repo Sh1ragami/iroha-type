@@ -22,7 +22,11 @@ pub struct ScoreRecord {
     pub rank: String,
     #[serde(skip_serializing_if = "Option::is_none")] pub speed_series: Option<Vec<(f64,f64)>>,
     #[serde(skip_serializing_if = "Option::is_none")] pub word_display: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub replay: Option<Vec<KeyEv>>, 
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyEv { pub t: f64, pub c: String, pub ok: bool, pub w: usize }
 
 impl ScoreBook {
     pub fn path() -> PathBuf { PathBuf::from("data/scores.json") }
@@ -44,4 +48,3 @@ impl ScoreBook {
         self.lap.truncate(10);
     }
 }
-
