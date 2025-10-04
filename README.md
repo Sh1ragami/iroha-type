@@ -1,55 +1,63 @@
+```
+ _ ____            _          _   _           
+(_)_  /  ___ _ __ | |__   ___| |_(_)_ __   __ 
+ | |/ / / _ \ '_ \| '_ \ / _ \ __| | '_ \ / _|
+ | / /_|  __/ |_) | | | |  __/ |_| | | | | (_ 
+ |/____\___| .__/|_| |_|\___|\__|_|_| |_|\__|
+            |_|  I r o h a T y p e
+```
+
 IrohaType — Japanese Typing TUI
 ================================
 
-集中して日本語を打ちたい人のための、シンプルなタイピングアプリです。
+タイプウェル風のTUIタイピングアプリです。
 
-<img width="903" height="651" alt="スクリーンショット 2025-10-04 14 19 25" src="https://github.com/user-attachments/assets/1a978bad-d0be-4c75-a8c6-dc777bfde42a" />
+[![Made with Rust](https://img.shields.io/badge/Made%20with-Rust-b7410e.svg?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+![Edition](https://img.shields.io/badge/Rust_edition-2021-informational)
+[![TUI](https://img.shields.io/badge/TUI-ratatui%200.27-00b4d8)](https://github.com/ratatui-org/ratatui)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 
-<img width="903" height="651" alt="スクリーンショット 2025-10-04 13 58 12" src="https://github.com/user-attachments/assets/9cb47bcb-da0a-473b-b26d-bed6d0d2feb4" />
+デモ
+----
 
+https://github.com/user-attachments/assets/91c76305-8108-4afe-9b93-fc2d987c2297
 
 できること
+--------
 - 常用語をテンポよく練習（上: 日本語／下: ローマ字）
 - 誤タイプ時は「次に打つべき1文字」を赤でヒント
-- 既定は「400打」で打ち切り。記録は自動で保存・ランキングに反映
-- 画面は“中央ステージ”だけ使い、目が疲れにくいレイアウト
+- 既定は「400打」で打ち切り。記録は自動で保存・ランキング（Top 100）に反映
+
+インストール / 実行
+------------------
+前提: Rust (stable) が入っていればOK
+
+```
+git clone <このリポジトリ>
+cd <repo>
+cargo run --release
+```
 
 はじめかた
+--------
 1) ターミナルでこのフォルダを開く
-2) `cargo run` を実行
+2) `cargo run` を実行（上と同じ）
 3) 画面が出たら G キーで開始
 
-プレイ方法（3行でわかる）
-- 上段の日本語を左から右へ。現在語は反転＋下線で位置が出ます
-- 下段のローマ字をそのまま入力（shi/si, cho/tyo など表記ゆれOK）
-- 誤タイプ時は、押した文字は出さず「正解の次文字」を赤で表示
 
-よく使う操作
-- ホーム: G=Start / R=Ranking / S=Settings / Q=Quit
-- プレイ: 文字キーで入力 / ESC=中断
-- 結果: Enter=ランキングへ / ESC=ホームへ
-
-カスタマイズ
-- 画面サイズ: 設定で ←/→（幅） ↑/↓（高さ）
-- 打鍵数: 設定で [ / ]（-50/+50）。既定は 400。
-- 固定打鍵モード: 設定で F で ON/OFF
-- ミスのタイムロス: 設定で +/-（ミリ秒）
-
-画面の見かた
-- 上段（日本語）: 語が並び、現在語は反転。ローマ字の進み具合に合わせて1文字が下線
-- 中段（ローマ字）: 確定=緑、未入力=白、次に打つべき1文字=赤
-- 右（ラップ）: 語ごとの所要秒数
-- 下（ゲージ）: 400打に向けた進捗
-
-困ったときは
+トラブルシュート
+--------------
 - 画面が狭い: 設定でステージを小さく（←/→, ↑/↓）
 - 文字が□で出る: 端末フォントを日本語対応に／UTF-8 を有効に
-- ローマ字が通らない: shi/si, cha/tya, cho/tyo など複数表記に対応。別表記を試してください
+- ローマ字が通らない: `shi/si`, `cha/tya`, `cho/tyo` など複数表記に対応。別表記を試してください
 
-データ保存
-- 設定: data/config.json（アプリ名、画面サイズ、打鍵数など）
-- 記録: data/scores.json（ランキング）
-- 辞書: data/words/basic_common.json
+フォルダ構成 / データ保存
+---------------------
+- 設定: `data/config.json`（画面サイズ、打鍵数など）
+- 記録: `data/scores.json`（ランキング）
+- 辞書: `data/words/basic_common.json`
 
 ライセンス
-- MIT
+--------
+MIT
