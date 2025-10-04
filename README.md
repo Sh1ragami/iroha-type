@@ -3,6 +3,8 @@ IrohaType — Japanese Typing TUI
 
 集中して日本語を打ちたい人のための、シンプルなタイピングアプリです。
 
+<img width="903" height="651" alt="スクリーンショット 2025-10-04 14 19 25" src="https://github.com/user-attachments/assets/1a978bad-d0be-4c75-a8c6-dc777bfde42a" />
+
 <img width="903" height="651" alt="スクリーンショット 2025-10-04 13 58 12" src="https://github.com/user-attachments/assets/9cb47bcb-da0a-473b-b26d-bed6d0d2feb4" />
 
 
