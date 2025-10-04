@@ -4,6 +4,7 @@ pub mod result;
 pub mod ranking;
 pub mod settings;
 pub mod chart;
+pub mod details;
 
 use ratatui::prelude::*;
 

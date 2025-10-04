@@ -110,6 +110,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(75), Constraint::Percentage(25)])
             .split(v[4]);
+        // ROMA only
         let roma_line = Paragraph::new(Line::from(roma_spans))
             .wrap(Wrap { trim: false })
             .block(Block::default().borders(Borders::ALL).title("ローマ字"));
@@ -180,12 +181,17 @@ fn jp_spans_grid(g: &crate::engine::game::Game) -> Vec<Span<'static>> {
             let mut pos = ((typed as f64 / total as f64) * n as f64).floor() as usize;
             if pos >= n { pos = n - 1; }
             for (j, ch) in chars.into_iter().enumerate() {
-                let mut st = Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD);
-                if j == pos { st = st.add_modifier(Modifier::UNDERLINED); }
+                let st = if j < pos {
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                } else if j == pos {
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                } else {
+                    Style::default().fg(Color::White)
+                };
                 out.push(Span::styled(ch.to_string(), st));
             }
         } else {
-            out.push(Span::raw(w.jp.clone()));
+            out.push(Span::styled(w.jp.clone(), Style::default().fg(Color::Gray)));
         }
         if i + 1 < g.words_len() { out.push(Span::raw("  ")); }
     }
