@@ -1,8 +1,8 @@
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{layout::{Constraint, Direction, Layout}, style::{Style, Color}, text::Span, widgets::{Block, Borders, Paragraph}, Terminal, Frame};
+use crossterm::event::{self, Event, KeyCode, KeyEvent};
+use ratatui::{layout::{Constraint, Direction, Layout}, style::Color, widgets::{Block, Borders, Paragraph}, Terminal, Frame};
 
 use crate::ui;
 use crate::engine;
@@ -11,10 +11,11 @@ use crate::util;
 
 use engine::game::{Game, GameConfig, WordEntry};
 use store::json::{ScoreBook, ScoreRecord};
+// no name input
 use util::config::AppConfig;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Screen { Top, Play, Result, Ranking, Details, Settings, Help }
+pub enum Screen { Top, Play, Ranking, Details, Settings, Help }
 
 pub struct App {
     pub screen: Screen,
@@ -27,6 +28,7 @@ pub struct App {
     pub anim_tick: u64,
     pub words: Vec<WordEntry>,
     pub replay: Option<ReplayState>,
+    pub rec_prompt: Option<RecordPrompt>,
 }
 
 #[derive(Clone, Copy)]
@@ -64,6 +66,7 @@ pub fn run(terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<std::io::S
         anim_tick: 0,
         words: words.clone(),
         replay: None,
+        rec_prompt: None,
     };
 
     let mut last_tick = Instant::now();
@@ -122,23 +125,30 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>, rules_path: 
             }
         }
         Screen::Play => {
-            if let Some(g) = &mut app.game {
+            if app.rec_prompt.is_some() {
+                // ポップアップ表示中: Enter/ESCのみ
+                match key.code {
+                    KeyCode::Esc => { finalize_result_prompt(app, /*go_ranking=*/false)?; }
+                    KeyCode::Enter => { finalize_result_prompt(app, /*go_ranking=*/true)?; }
+                    _ => {}
+                }
+            } else if let Some(g) = &mut app.game {
                 let finished = g.handle_key(key)?;
                 if finished {
-                    let record = g.finish_record();
-                    app.scorebook.update_with(record.clone());
-                    app.scorebook.save()?;
-                    app.last_result = Some(record);
-                    // プレイ終了後はランキング画面へ直接遷移
-                    app.screen = Screen::Ranking;
+                    if g.aborted() {
+                        // 中断：保存しないでトップへ
+                        app.game = None;
+                        app.last_result = None;
+                        app.rec_prompt = None;
+                        app.screen = Screen::Top;
+                    } else {
+                        let record = g.finish_record();
+                        let (rank_in, is_new) = app.scorebook.insert_and_rank(record.clone());
+                        app.last_result = Some(record);
+                        app.rec_prompt = Some(RecordPrompt { is_new, rank_in_top: rank_in });
+                        // 画面はPlayのまま。オーバーレイを表示。
+                    }
                 }
-            }
-        }
-        Screen::Result => {
-            match key.code {
-                KeyCode::Esc => app.screen = Screen::Top,
-                KeyCode::Enter => app.screen = Screen::Ranking,
-                _ => {}
             }
         }
         Screen::Ranking => {
@@ -184,7 +194,6 @@ fn draw(f: &mut Frame, app: &mut App) {
     match app.screen {
         Screen::Top => ui::top::draw(f, app),
         Screen::Play => ui::play::draw(f, app),
-        Screen::Result => ui::result::draw(f, app),
         Screen::Ranking => ui::ranking::draw(f, app),
         Screen::Details => ui::details::draw(f, app),
         Screen::Settings => ui::settings::draw(f, app),
@@ -203,3 +212,15 @@ pub use ui::*;
 #[derive(Debug, Clone)]
 pub struct ReplayState { pub ev_idx: usize, pub playing: bool, pub speed: f64, pub time: f64 }
 impl Default for ReplayState { fn default()->Self{ Self{ ev_idx:0, playing:true, speed:1.0, time:0.0 } }}
+
+#[derive(Debug, Clone)]
+pub struct RecordPrompt { pub is_new: bool, pub rank_in_top: Option<usize> }
+
+fn finalize_result_prompt(app: &mut App, go_ranking: bool) -> anyhow::Result<()> {
+    // 記録は挿入済み。ここで保存して画面遷移するだけ。
+    app.rec_prompt = None;
+    app.game = None;
+    app.scorebook.save()?;
+    app.screen = if go_ranking { Screen::Ranking } else { Screen::Top };
+    Ok(())
+}

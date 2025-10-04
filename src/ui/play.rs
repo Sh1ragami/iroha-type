@@ -142,6 +142,40 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             .ratio(g.progress_ratio());
         f.render_widget(gauge, v[5]);
     }
+
+    // Overlay: 終了時ダイアログ（新記録/順位/名前入力）
+    if let Some(prompt) = &app.rec_prompt {
+        let dlg_w = 62u16; let dlg_h = if prompt.rank_in_top.is_some() { 8 } else { 6 };
+        let dlg = super::centered(stage, dlg_w, dlg_h);
+        // 透過風に上書き
+        f.render_widget(Clear, dlg);
+        let title = if prompt.is_new {
+            Span::styled(" 新記録樹立！ ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))
+        } else {
+            Span::styled(" 記録 ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        };
+        let blk = Block::default().borders(Borders::ALL).title(title);
+        f.render_widget(blk, dlg);
+
+        let inner = Rect{ x: dlg.x+1, y: dlg.y+1, width: dlg.width-2, height: dlg.height-2 };
+        let lines = if let (Some(rk), Some(rec)) = (prompt.rank_in_top, &app.last_result) {
+            vec![
+                Line::from(Span::styled("おめでとうございます。", Style::default().fg(Color::Cyan))),
+                Line::from(Span::styled(format!("記録: {:>.3} 秒", rec.time_sec), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+                Line::from(Span::styled(format!("TOP100入り（{}位）", rk), Style::default().fg(Color::Magenta))),
+                Line::from("[Enter] ランキングへ   [ESC] トップへ"),
+            ]
+        } else if let Some(rec) = &app.last_result {
+            vec![
+                Line::from(Span::styled(format!("記録: {:>.3} 秒", rec.time_sec), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+                Line::from(Span::styled("今回はTOP100に入りませんでした。", Style::default().fg(Color::Gray))),
+                Line::from("[Enter] ランキングへ   [ESC] トップへ"),
+            ]
+        } else { vec![Line::from("[Enter] ランキングへ   [ESC] トップへ")] };
+        let para = Paragraph::new(lines);
+        f.render_widget(para, Rect{ x: inner.x, y: inner.y, width: inner.width, height: inner.height.saturating_sub(2) });
+
+    }
 }
 
 fn truncate(s: &str, max_w: usize) -> String {
