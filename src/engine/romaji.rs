@@ -26,6 +26,11 @@ impl RomajiRules {
         if r.special.is_none() { r.special = Some(SpecialRules{ n_patterns: vec!["n'".into(), "nn".into(), "n".into()] }); }
         Ok(r)
     }
+    pub fn from_yaml_str(s: &str) -> Result<Self> {
+        let mut r: RomajiRules = serde_yaml::from_str(s)?;
+        if r.special.is_none() { r.special = Some(SpecialRules{ n_patterns: vec!["n'".into(), "nn".into(), "n".into()] }); }
+        Ok(r)
+    }
 }
 
 pub enum InputResult { Correct, Miss, Complete, Noop }

@@ -5,7 +5,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{prelude::*, Terminal};
-use typewell_tui::app;
+use irohatype::app;
 
 fn main() -> Result<()> {
     // setup terminal
