@@ -38,6 +38,11 @@ pub fn load_words_json(path: &Path) -> Result<Vec<WordEntry>> {
     Ok(wf.entries)
 }
 
+pub fn load_words_from_str(data: &str) -> Result<Vec<WordEntry>> {
+    let wf: WordsFile = serde_json::from_str(data)?;
+    Ok(wf.entries)
+}
+
 fn min_roma_len(e: &WordEntry) -> usize {
     e.romas.iter().map(|s| s.len()).min().unwrap_or(0)
 }
@@ -82,6 +87,29 @@ pub struct Game {
 impl Game {
     pub fn new(cfg: GameConfig, words: Vec<WordEntry>, rules_path: &Path) -> Result<Self> {
         let rules = RomajiRules::from_yaml_file(rules_path)?;
+        let mut words_sel = if cfg.fixed_chars && cfg.target_chars > 0 { build_session_words(&words, &rules, cfg.target_chars) } else { words };
+        if !words_sel.is_empty() && !cfg.fixed_chars { words_sel.truncate(cfg.max_words.min(words_sel.len())); }
+        Ok(Self{
+            words: words_sel,
+            idx: 0,
+            typed: String::new(),
+            correct_keystrokes: 0,
+            miss: 0,
+            splits: vec![],
+            started_at: None,
+            word_start: None,
+            finished: false,
+            aborted: false,
+            rules,
+            matcher: None,
+            speed_series: vec![],
+            cfg,
+            last_miss_char: None,
+            replay: vec![],
+        })
+    }
+
+    pub fn new_with_rules(cfg: GameConfig, words: Vec<WordEntry>, rules: RomajiRules) -> Result<Self> {
         let mut words_sel = if cfg.fixed_chars && cfg.target_chars > 0 { build_session_words(&words, &rules, cfg.target_chars) } else { words };
         if !words_sel.is_empty() && !cfg.fixed_chars { words_sel.truncate(cfg.max_words.min(words_sel.len())); }
         Ok(Self{

@@ -10,6 +10,7 @@ use crate::store;
 use crate::util;
 
 use engine::game::{Game, GameConfig, WordEntry};
+use engine::romaji::RomajiRules;
 use store::json::{ScoreBook, ScoreRecord};
 // no name input
 use util::config::AppConfig;
@@ -29,6 +30,7 @@ pub struct App {
     pub words: Vec<WordEntry>,
     pub replay: Option<ReplayState>,
     pub rec_prompt: Option<RecordPrompt>,
+    pub rules: RomajiRules,
 }
 
 #[derive(Clone, Copy)]
@@ -47,12 +49,10 @@ impl Default for Theme {
 }
 
 pub fn run(terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<std::io::Stdout>>) -> Result<()> {
-    let data_dir = std::path::PathBuf::from("data");
-    let words_path = data_dir.join("words").join("basic_common.json");
-    let rules_path = data_dir.join("rules").join("romaji.yaml");
-
     let cfg = AppConfig::load_or_default()?;
-    let words: Vec<WordEntry> = engine::game::load_words_json(&words_path)?;
+    // Embed dictionary & rules for crates.io install
+    let words: Vec<WordEntry> = engine::game::load_words_from_str(include_str!("../data/words/basic_common.json"))?;
+    let romaji_rules: RomajiRules = engine::romaji::RomajiRules::from_yaml_str(include_str!("../data/rules/romaji.yaml"))?;
     let scorebook = store::json::ScoreBook::load_or_default()?;
 
     let mut app = App {
@@ -67,6 +67,7 @@ pub fn run(terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<std::io::S
         words: words.clone(),
         replay: None,
         rec_prompt: None,
+        rules: romaji_rules,
     };
 
     let mut last_tick = Instant::now();
@@ -77,7 +78,7 @@ pub fn run(terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<std::io::S
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                handle_key(&mut app, key, &words, &rules_path)?;
+                handle_key(&mut app, key, &words)?;
             }
         }
         if last_tick.elapsed() >= tick_rate {
@@ -101,7 +102,7 @@ pub fn run(terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<std::io::S
     Ok(())
 }
 
-fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>, rules_path: &std::path::Path) -> Result<()> {
+fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>) -> Result<()> {
     match app.screen {
         Screen::Top => {
             match key.code {
@@ -114,7 +115,7 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>, rules_path: 
                     gc.target_chars = app.cfg.target_chars as usize;
                     gc.time_limit_sec = f64::INFINITY;
                     gc.max_words = usize::MAX; // 固定文字数モードでは周回できるよう制限なし
-                    let mut g = Game::new(gc, words.clone(), rules_path)?;
+                    let mut g = Game::new_with_rules(gc, words.clone(), app.rules.clone())?;
                     g.start();
                     app.game = Some(g);
                     app.screen = Screen::Play;

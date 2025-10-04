@@ -1,10 +1,29 @@
 [package]
-name = "typewell-tui"
+name = "irohatype"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
 authors = ["TypeWell TUI Team"]
-description = "TypeWell 国語R を Rust + ratatui でTUI再現"
+description = "IrohaType — Japanese typing TUI. Practice common Japanese words with a focused terminal UI."
+readme = "README.md"
+keywords = ["typing","tui","japanese","romaji","terminal"]
+categories = ["command-line-utilities","text-processing","games"]
+repository = "https://github.com/Sh1ragami/iroha-type"
+homepage = "https://github.com/Sh1ragami/iroha-type"
+documentation = "https://github.com/Sh1ragami/iroha-type#readme"
+# Package only the files needed for build and docs (assets/screenshots etc. are omitted)
+include = [
+  "src/**",
+  "Cargo.toml",
+  "README.md",
+  "LICENSE",
+  "data/rules/romaji.yaml",
+  "data/words/basic_common.json"
+]
+
+[[bin]]
+name = "irohatype"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
@@ -36,4 +55,3 @@ pretty_assertions = "1.4"
 codegen-units = 1
 lto = true
 opt-level = "z"
-
