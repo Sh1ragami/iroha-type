@@ -1,7 +1,7 @@
 use ratatui::{prelude::*, widgets::*};
 use crate::app::App;
 use crate::engine::game::WordEntry;
-use crate::engine::romaji::{RomajiMatcher, RomajiRules};
+// use crate::engine::romaji::{RomajiMatcher, RomajiRules};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.size();
@@ -61,7 +61,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
         // Metrics
         let avg = if !rec.splits.is_empty() { rec.splits.iter().map(|s| s.sec).sum::<f64>() / rec.splits.len() as f64 } else { 0.0 };
-        let mut box_lines = vec![
+        let box_lines = vec![
             Line::from(format!("Time     {:>7.3}s", rec.time_sec)),
             Line::from(format!("Miss     {:>3}", rec.miss)),
             Line::from(format!("Timeloss {:>7.3}s", rec.timeloss_sec)),

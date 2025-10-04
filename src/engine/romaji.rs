@@ -36,7 +36,7 @@ impl RomajiRules {
 pub enum InputResult { Correct, Miss, Complete, Noop }
 
 pub struct RomajiMatcher {
-    jp: String,
+    _jp: String,
     candidates: Vec<String>,
     pub typed: String,
     pub miss_count: u32,
@@ -50,7 +50,7 @@ impl RomajiMatcher {
         }
         let mut candidates: Vec<String> = set.into_iter().collect();
         candidates.sort_by_key(|s| s.len());
-        Self{ jp: jp.into(), candidates, typed: String::new(), miss_count: 0 }
+        Self{ _jp: jp.into(), candidates, typed: String::new(), miss_count: 0 }
     }
 
     pub fn input_char(&mut self, c: char) -> InputResult {
@@ -110,7 +110,7 @@ fn expand_yure(base: &str, rules: &RomajiRules) -> Vec<String> {
     for (a,b) in tri { apply_bi(&mut out, a,b); apply_bi(&mut out, b,a); }
 
     // "n'","nn","n" variants
-    if let Some(sp) = &rules.special { 
+    if rules.special.is_some() { 
         let mut extra: HashSet<String> = HashSet::new();
         for s in out.iter() {
             // Replace occurrences of n' with nn and n, and also allow final trailing n

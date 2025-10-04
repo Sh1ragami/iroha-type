@@ -178,19 +178,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 }
 
-fn truncate(s: &str, max_w: usize) -> String {
-    let w = unicode_width::UnicodeWidthStr::width(s);
-    if w <= max_w { return s.to_string(); }
-    let mut out = String::new();
-    let mut cur = 0;
-    for ch in s.chars() {
-        let cw = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1);
-        if cur + cw > max_w.saturating_sub(1) { break; }
-        cur += cw; out.push(ch);
-    }
-    out.push('…');
-    out
-}
+// (unused) truncate helper was removed to silence warnings
 
 fn progress_blocks(ratio: f64, cells: usize) -> Line<'static> {
     let filled = ((ratio.clamp(0.0, 1.0)) * cells as f64).round() as usize;
