@@ -70,6 +70,7 @@ pub struct Game {
     started_at: Option<Instant>,
     word_start: Option<Instant>,
     finished: bool,
+    aborted: bool,
     rules: RomajiRules,
     matcher: Option<RomajiMatcher>,
     speed_series: Vec<(f64,f64)>,
@@ -93,6 +94,7 @@ impl Game {
             started_at: None,
             word_start: None,
             finished: false,
+            aborted: false,
             rules,
             matcher: None,
             speed_series: vec![],
@@ -124,7 +126,7 @@ impl Game {
     pub fn handle_key(&mut self, key: KeyEvent) -> Result<bool> {
         if self.finished { return Ok(true); }
         match key.code {
-            KeyCode::Esc => { self.finished = true; return Ok(true); }
+            KeyCode::Esc => { self.aborted = true; self.finished = true; return Ok(true); }
             KeyCode::Char(ch) => {
                 let c = ch.to_ascii_lowercase();
                 // 最初の打鍵で計測開始
@@ -196,6 +198,7 @@ impl Game {
             splits: self.splits.iter().map(|s| crate::store::json::SplitRec { word: s.word.clone(), sec: s.sec, miss: s.miss }).collect(),
             wpm_top, wpm_worst,
             rank: super::level::estimate_rank(self.avg_cps()).to_string(),
+            memo: None,
             speed_series: Some(self.speed_series.clone()),
             word_display: None,
             replay: if self.replay.is_empty() { None } else { Some(self.replay.clone()) },
@@ -268,6 +271,7 @@ impl Game {
     pub fn current_typed_len(&self) -> usize { self.typed.len() }
     pub fn last_miss_char(&self) -> Option<char> { self.last_miss_char }
     pub fn current_typed_total(&self) -> u32 { self.correct_keystrokes }
+    pub fn aborted(&self) -> bool { self.aborted }
 
     fn push_ev(&mut self, c: char, ok: bool) {
         let t = self.elapsed_secs();
