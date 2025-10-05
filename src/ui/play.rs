@@ -187,26 +187,49 @@ fn jp_spans_grid(g: &crate::engine::game::Game) -> Vec<Span<'static>> {
     let mut out: Vec<Span> = Vec::new();
     let idx = g.current_index();
     for (i, w) in g.words.iter().enumerate() {
-        if i == idx {
+        if i < idx {
+            // Already completed words => match ROMA: whole word in green
+            out.push(Span::styled(w.jp.clone(), Style::default().fg(Color::Green)));
+        } else if i == idx {
+            // Current word => mirror ROMA coloring
+            // - done part: green
+            // - next char: red (only when last input was a miss)
+            // - remaining: default (raw)
             let roma = g.current_roma_line();
             let total = roma.len().max(1);
             let typed = g.current_typed_len().min(total);
             let chars: Vec<char> = w.jp.chars().collect();
-            let n = chars.len().max(1);
-            let mut pos = ((typed as f64 / total as f64) * n as f64).floor() as usize;
-            if pos >= n { pos = n - 1; }
-            for (j, ch) in chars.into_iter().enumerate() {
-                let st = if j < pos {
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
-                } else if j == pos {
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            let n = chars.len();
+            // number of JP chars considered "done" proportional to typed ROMA
+            let mut done = (((typed as f64) / (total as f64)) * (n as f64)).floor() as usize;
+            if done > n { done = n; }
+
+            // done part
+            for ch in chars.iter().take(done) {
+                out.push(Span::styled(ch.to_string(), Style::default().fg(Color::Green)));
+            }
+
+            if done < n {
+                let next_ch = chars[done];
+                if g.last_miss_char().is_some() {
+                    // show attention on miss like ROMA: red + bold
+                    out.push(Span::styled(
+                        next_ch.to_string(),
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    ));
                 } else {
-                    Style::default().fg(Color::White)
-                };
-                out.push(Span::styled(ch.to_string(), st));
+                    // no miss: keep default style for upcoming char
+                    out.push(Span::raw(next_ch.to_string()));
+                }
+
+                // rest part in default style
+                for ch in &chars[done + 1..] {
+                    out.push(Span::raw(ch.to_string()));
+                }
             }
         } else {
-            out.push(Span::styled(w.jp.clone(), Style::default().fg(Color::Gray)));
+            // Future words => match ROMA: default style
+            out.push(Span::raw(w.jp.clone()));
         }
         if i + 1 < g.words_len() { out.push(Span::raw("  ")); }
     }
