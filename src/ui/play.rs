@@ -73,14 +73,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         let mut roma_spans: Vec<Span> = Vec::new();
         let idx = g.current_index();
         for i in 0..g.words_len() {
-            let roma = if i < idx {
-                // 完了
-                g.words[i].romas.get(0).cloned().unwrap_or_default()
-            } else if i == idx {
-                g.current_roma_line()
-            } else {
-                g.words[i].romas.get(0).cloned().unwrap_or_default()
-            };
+            let roma = g.roma_for_index(i);
             if i < idx {
                 roma_spans.push(Span::styled(roma, Style::default().fg(Color::Green)));
             } else if i == idx {
