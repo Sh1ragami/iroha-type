@@ -138,7 +138,7 @@ fn is_confirmed_switch(pref: &str) -> bool {
     pref.len() >= 2
 }
 
-fn expand_yure(base: &str, rules: &RomajiRules) -> Vec<String> {
+fn expand_yure(base: &str, _rules: &RomajiRules) -> Vec<String> {
     // Generate variants for common yure inside a word.
     let mut out: HashSet<String> = HashSet::new();
     out.insert(base.to_string());
@@ -180,14 +180,6 @@ fn apply_bi(set: &mut HashSet<String>, a: &str, b: &str) {
     let mut add: HashSet<String> = HashSet::new();
     for s in set.iter() {
         if s.contains(a) { add.insert(s.replace(a,b)); }
-    }
-    set.extend(add.into_iter());
-}
-
-fn apply_uni(set: &mut HashSet<String>, from: &str, to: &str) {
-    let mut add: HashSet<String> = HashSet::new();
-    for s in set.iter() {
-        if s.contains(from) { add.insert(s.replace(from, to)); }
     }
     set.extend(add.into_iter());
 }
