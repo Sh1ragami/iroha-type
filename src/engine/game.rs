@@ -82,6 +82,8 @@ pub struct Game {
     cfg: GameConfig,
     last_miss_char: Option<char>,
     replay: Vec<KeyEv>,
+    // Stores the romaji variant actually typed for each word (if completed)
+    display_romas: Vec<Option<String>>,
 }
 
 impl Game {
@@ -89,6 +91,7 @@ impl Game {
         let rules = RomajiRules::from_yaml_file(rules_path)?;
         let mut words_sel = if cfg.fixed_chars && cfg.target_chars > 0 { build_session_words(&words, &rules, cfg.target_chars) } else { words };
         if !words_sel.is_empty() && !cfg.fixed_chars { words_sel.truncate(cfg.max_words.min(words_sel.len())); }
+        let dr_len = words_sel.len();
         Ok(Self{
             words: words_sel,
             idx: 0,
@@ -106,12 +109,14 @@ impl Game {
             cfg,
             last_miss_char: None,
             replay: vec![],
+            display_romas: vec![None; dr_len],
         })
     }
 
     pub fn new_with_rules(cfg: GameConfig, words: Vec<WordEntry>, rules: RomajiRules) -> Result<Self> {
         let mut words_sel = if cfg.fixed_chars && cfg.target_chars > 0 { build_session_words(&words, &rules, cfg.target_chars) } else { words };
         if !words_sel.is_empty() && !cfg.fixed_chars { words_sel.truncate(cfg.max_words.min(words_sel.len())); }
+        let dr_len = words_sel.len();
         Ok(Self{
             words: words_sel,
             idx: 0,
@@ -129,6 +134,7 @@ impl Game {
             cfg,
             last_miss_char: None,
             replay: vec![],
+            display_romas: vec![None; dr_len],
         })
     }
 
@@ -136,6 +142,7 @@ impl Game {
         // 計測は最初の打鍵で開始するため、ここでは開始しない
         self.started_at = None;
         self.word_start = None;
+        if self.display_romas.len() != self.words.len() { self.display_romas = vec![None; self.words.len()]; }
         if let Some(w) = self.words.get(self.idx) {
             self.matcher = Some(RomajiMatcher::new(&w.jp, &w.romas, &self.rules));
         }
@@ -198,8 +205,19 @@ impl Game {
             let sec = ws.elapsed().as_secs_f64();
             let word = self.words[self.idx].jp.clone();
             let miss = self.matcher.as_ref().map(|m| m.miss_count).unwrap_or(0);
-            let ks = self.matcher.as_ref().map(|m| m.example_roma().len() as u32).unwrap_or(0);
+            let ks = self.matcher.as_ref().map(|m| {
+                let def = self.words[self.idx].romas.get(0).cloned().unwrap_or_default();
+                m.display_with_default(&def).len() as u32
+            }).unwrap_or(0);
             self.splits.push(Split{word, sec, miss, keystrokes: ks});
+        }
+        // Record the actual variant used for display if available
+        if let Some(m) = &self.matcher {
+            let used = if m.typed.is_empty() {
+                let def = self.words[self.idx].romas.get(0).cloned().unwrap_or_default();
+                m.display_with_default(&def)
+            } else { m.typed.clone() };
+            if self.idx < self.display_romas.len() { self.display_romas[self.idx] = Some(used); }
         }
         self.idx += 1;
         self.typed.clear();
@@ -261,9 +279,25 @@ impl Game {
     }
     pub fn current_roma_line(&self) -> String {
         if let Some(w) = self.words.get(self.idx) {
-            if let Some(m) = &self.matcher { return m.best_candidate(); }
+            if let Some(m) = &self.matcher {
+                let def = w.romas.get(0).cloned().unwrap_or_default();
+                return m.display_with_default(&def);
+            }
             w.romas.get(0).cloned().unwrap_or_default()
         } else { String::new() }
+    }
+
+    // Return the romaji display for a given word index reflecting typed method
+    pub fn roma_for_index(&self, i: usize) -> String {
+        if i >= self.words.len() { return String::new(); }
+        if i < self.idx {
+            if let Some(Some(s)) = self.display_romas.get(i) { return s.clone(); }
+            return self.words[i].romas.get(0).cloned().unwrap_or_default();
+        } else if i == self.idx {
+            return self.current_roma_line();
+        } else {
+            return self.words[i].romas.get(0).cloned().unwrap_or_default();
+        }
     }
     pub fn current_jp_progress(&self) -> (String, Option<char>, String) {
         if let Some(w) = self.words.get(self.idx) {
