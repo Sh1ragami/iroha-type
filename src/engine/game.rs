@@ -73,6 +73,8 @@ pub struct Game {
     miss: u32,
     pub splits: Vec<Split>,
     started_at: Option<Instant>,
+    // Freeze end time to stop timer after finish
+    ended_at: Option<Instant>,
     word_start: Option<Instant>,
     finished: bool,
     aborted: bool,
@@ -100,6 +102,7 @@ impl Game {
             miss: 0,
             splits: vec![],
             started_at: None,
+            ended_at: None,
             word_start: None,
             finished: false,
             aborted: false,
@@ -125,6 +128,7 @@ impl Game {
             miss: 0,
             splits: vec![],
             started_at: None,
+            ended_at: None,
             word_start: None,
             finished: false,
             aborted: false,
@@ -155,13 +159,13 @@ impl Game {
         self.speed_series.push((t,cps));
         let fixed_done = self.cfg.fixed_chars && (self.correct_keystrokes as usize) >= self.cfg.target_chars;
         let all_words_done = self.idx >= self.words.len() || self.idx >= self.cfg.max_words;
-        if (self.cfg.fixed_chars && fixed_done) || (!self.cfg.fixed_chars && all_words_done) { self.finished = true; }
+        if (self.cfg.fixed_chars && fixed_done) || (!self.cfg.fixed_chars && all_words_done) { self.finish(); }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Result<bool> {
         if self.finished { return Ok(true); }
         match key.code {
-            KeyCode::Esc => { self.aborted = true; self.finished = true; return Ok(true); }
+            KeyCode::Esc => { self.aborted = true; self.finish(); return Ok(true); }
             KeyCode::Char(ch) => {
                 let c = ch.to_ascii_lowercase();
                 // 最初の打鍵で計測開始
@@ -173,12 +177,12 @@ impl Game {
                     match m.input_char(c) {
                         super::romaji::InputResult::Correct => {
                             self.typed.push(c); self.correct_keystrokes+=1; self.last_miss_char=None; self.push_ev(c, true);
-                            if self.cfg.fixed_chars && (self.correct_keystrokes as usize) >= self.cfg.target_chars { self.finished = true; return Ok(true); }
+                            if self.cfg.fixed_chars && (self.correct_keystrokes as usize) >= self.cfg.target_chars { self.finish(); return Ok(true); }
                         },
                         super::romaji::InputResult::Miss => { self.miss+=1; self.penalize_time(); self.last_miss_char = Some(c); self.push_ev(c, false); },
                         super::romaji::InputResult::Complete => {
                             self.typed.push(c); self.correct_keystrokes+=1; self.last_miss_char=None; self.push_ev(c, true);
-                            if self.cfg.fixed_chars && (self.correct_keystrokes as usize) >= self.cfg.target_chars { self.finished = true; return Ok(true); }
+                            if self.cfg.fixed_chars && (self.correct_keystrokes as usize) >= self.cfg.target_chars { self.finish(); return Ok(true); }
                             self.finish_word();
                         },
                         super::romaji::InputResult::Noop => {}
@@ -227,7 +231,7 @@ impl Game {
             self.matcher = Some(RomajiMatcher::new(&w.jp, &w.romas, &self.rules));
         } else {
             // fixed_charsでも周回せず終了（表示は目標打数を超える最後の語まで）
-            self.finished = true;
+            self.finish();
         }
     }
 
@@ -251,7 +255,13 @@ impl Game {
         }
     }
 
-    pub fn elapsed_secs(&self) -> f64 { self.started_at.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0) }
+    pub fn elapsed_secs(&self) -> f64 {
+        match (self.started_at, self.ended_at) {
+            (Some(start), Some(end)) => end.saturating_duration_since(start).as_secs_f64(),
+            (Some(start), None) => start.elapsed().as_secs_f64(),
+            _ => 0.0,
+        }
+    }
     pub fn time_left_secs(&self) -> f64 { (self.cfg.time_limit_sec - self.elapsed_secs()).max(0.0) }
     pub fn current_level(&self) -> String { super::level::estimate_rank(self.avg_cps()).to_string() }
     pub fn miss(&self) -> u32 { self.miss }
@@ -338,5 +348,13 @@ impl Game {
     fn push_ev(&mut self, c: char, ok: bool) {
         let t = self.elapsed_secs();
         self.replay.push(KeyEv{ t, c: c.to_string(), ok, w: self.idx });
+    }
+
+    // mark game as finished and freeze timer
+    fn finish(&mut self) {
+        if !self.finished { self.finished = true; }
+        if self.started_at.is_some() && self.ended_at.is_none() {
+            self.ended_at = Some(Instant::now());
+        }
     }
 }
