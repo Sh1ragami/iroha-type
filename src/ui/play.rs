@@ -29,11 +29,19 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             ])
             .split(v[0]);
 
-        let btns = Paragraph::new(Line::from(vec![
-            Span::styled(" GO! ", Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD)),
-            Span::raw(" "),
-            Span::styled(" READY ", Style::default().fg(Color::Black).bg(Color::Gray)),
-        ]));
+        let btns = if app.countdown_until.is_some() {
+            Paragraph::new(Line::from(vec![
+                Span::styled(" GO ", Style::default().fg(Color::Black).bg(Color::Gray)),
+                Span::raw(" "),
+                Span::styled(" READY ", Style::default().fg(Color::White).bg(Color::Blue).add_modifier(Modifier::BOLD)),
+            ]))
+        } else {
+            Paragraph::new(Line::from(vec![
+                Span::styled(" GO! ", Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::raw(" "),
+                Span::styled(" READY ", Style::default().fg(Color::Black).bg(Color::Gray)),
+            ]))
+        };
         f.render_widget(btns, header_cols[0]);
 
         let title = Paragraph::new(Line::from(vec![
@@ -41,25 +49,47 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         ])).alignment(Alignment::Center);
         f.render_widget(title, header_cols[1]);
 
-        let tbox = Paragraph::new(Line::from(vec![
-            Span::raw("タイム: "),
-            Span::styled(format!("[{:.1}]", g.elapsed_secs()), Style::default().fg(Color::Yellow)),
-            Span::raw("  Keys "),
-            Span::styled(format!("{:>3}/400", g.current_typed_total()), Style::default().fg(Color::LightGreen)),
-        ])).alignment(Alignment::Right);
+        let tbox = if app.countdown_until.is_some() {
+            Paragraph::new(Line::from(vec![
+                Span::raw("タイム: "),
+                Span::styled("[--]", Style::default().fg(Color::Gray)),
+                Span::raw("  Keys "),
+                Span::styled(format!("{:>3}/400", g.current_typed_total()), Style::default().fg(Color::LightGreen)),
+            ])).alignment(Alignment::Right)
+        } else {
+            Paragraph::new(Line::from(vec![
+                Span::raw("タイム: "),
+                Span::styled(format!("[{:.1}]", g.elapsed_secs()), Style::default().fg(Color::Yellow)),
+                Span::raw("  Keys "),
+                Span::styled(format!("{:>3}/400", g.current_typed_total()), Style::default().fg(Color::LightGreen)),
+            ])).alignment(Alignment::Right)
+        };
         f.render_widget(tbox, header_cols[2]);
+        let is_cd = app.countdown_until.is_some();
+        // JP グリッド（カウントダウン中は単語非表示のままカウントダウン表示）
+        if is_cd {
+            let until = app.countdown_until.unwrap();
+            let now = std::time::Instant::now();
+            let rem = if until > now { (until - now).as_secs_f64() } else { 0.0 };
+            let disp = rem.ceil().max(0.0) as u64;
+            let msg = if disp == 0 { "READY".to_string() } else { format!("開始まで {}", disp) };
+            let jp_line = Paragraph::new(Line::from(vec![
+                Span::styled(msg, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            ])).alignment(Alignment::Center)
+              .block(Block::default().borders(Borders::ALL).title("かな/漢字"));
+            f.render_widget(jp_line, v[1]);
+        } else {
+            let jp_line = Paragraph::new(Line::from(jp_spans_grid(g)))
+                .wrap(Wrap { trim: false })
+                .block(Block::default().borders(Borders::ALL).title("かな/漢字"));
+            f.render_widget(jp_line, v[1]);
+        }
 
-        // JP グリッド
-        let jp_line = Paragraph::new(Line::from(jp_spans_grid(g)))
-            .wrap(Wrap { trim: false })
-            .block(Block::default().borders(Borders::ALL).title("かな/漢字"));
-        f.render_widget(jp_line, v[1]);
-
-        // プログレスブロック
+        // プログレスブロック（常時表示）
         let blocks = progress_blocks(g.progress_ratio(), 28);
         f.render_widget(Paragraph::new(blocks), v[2]);
 
-        // 情報行
+        // 情報行（常時表示）
         let info = Line::from(vec![
             Span::styled("目標=400打 ", Style::default().fg(Color::Red)),
             Span::raw("  "),
@@ -69,36 +99,41 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         ]);
         f.render_widget(Paragraph::new(info), v[3]);
 
-        // ROMA line: 完了=緑、現在=typed部緑+ミス赤、未了=白
+        // ROMA line: カウントダウン中は非表示プレースホルダ、以降は通常表示
         let mut roma_spans: Vec<Span> = Vec::new();
-        let idx = g.current_index();
-        for i in 0..g.words_len() {
-            let roma = g.roma_for_index(i);
-            if i < idx {
-                roma_spans.push(Span::styled(roma, Style::default().fg(Color::Green)));
-            } else if i == idx {
-                let typed_len = g.current_typed_len();
-                let (a,b) = roma.split_at(typed_len.min(roma.len()));
-                if !a.is_empty() {
-                    roma_spans.push(Span::styled(a.to_string(), Style::default().fg(Color::Green)));
-                }
-                if !b.is_empty() {
-                    if g.last_miss_char().is_some() {
-                        let mut chs = b.chars();
-                        if let Some(expected) = chs.next() {
-                            roma_spans.push(Span::styled(expected.to_string(), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)));
-                        }
-                        let rest: String = chs.collect();
-                        if !rest.is_empty() { roma_spans.push(Span::raw(rest)); }
-                    } else {
-                        roma_spans.push(Span::raw(b.to_string()));
+        if is_cd {
+            roma_spans.push(Span::styled("…", Style::default().fg(Color::Gray)));
+        } else {
+            let idx = g.current_index();
+            for i in 0..g.words_len() {
+                let roma = g.roma_for_index(i);
+                if i < idx {
+                    roma_spans.push(Span::styled(roma, Style::default().fg(Color::Green)));
+                } else if i == idx {
+                    let typed_len = g.current_typed_len();
+                    let (a,b) = roma.split_at(typed_len.min(roma.len()));
+                    if !a.is_empty() {
+                        roma_spans.push(Span::styled(a.to_string(), Style::default().fg(Color::Green)));
                     }
+                    if !b.is_empty() {
+                        if g.last_miss_char().is_some() {
+                            let mut chs = b.chars();
+                            if let Some(expected) = chs.next() {
+                                roma_spans.push(Span::styled(expected.to_string(), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)));
+                            }
+                            let rest: String = chs.collect();
+                            if !rest.is_empty() { roma_spans.push(Span::raw(rest)); }
+                        } else {
+                            roma_spans.push(Span::raw(b.to_string()));
+                        }
+                    }
+                } else {
+                    roma_spans.push(Span::raw(roma));
                 }
-            } else {
-                roma_spans.push(Span::raw(roma));
+                if i + 1 < g.words_len() { roma_spans.push(Span::raw(" ")); }
             }
-            if i + 1 < g.words_len() { roma_spans.push(Span::raw(" ")); }
         }
+
         let main_cols = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(75), Constraint::Percentage(25)])

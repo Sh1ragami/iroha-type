@@ -32,6 +32,7 @@ pub struct App {
     pub replay: Option<ReplayState>,
     pub rec_prompt: Option<RecordPrompt>,
     pub rules: RomajiRules,
+    pub countdown_until: Option<Instant>,
 }
 
 #[derive(Clone, Copy)]
@@ -69,6 +70,7 @@ pub fn run(terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<std::io::S
         replay: None,
         rec_prompt: None,
         rules: romaji_rules,
+        countdown_until: None,
     };
 
     let mut last_tick = Instant::now();
@@ -83,6 +85,15 @@ pub fn run(terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<std::io::S
             }
         }
         if last_tick.elapsed() >= tick_rate {
+            // カウントダウン終了チェック（Play画面のみ）
+            if matches!(app.screen, Screen::Play) {
+                if let Some(until) = app.countdown_until {
+                    if Instant::now() >= until {
+                        app.countdown_until = None;
+                        if let Some(g) = &mut app.game { g.begin_now(); }
+                    }
+                }
+            }
             if let Some(g) = &mut app.game { g.on_tick(); }
             // replay time update
             if matches!(app.screen, Screen::Details) {
@@ -120,6 +131,13 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>) -> Result<()
                     g.start();
                     app.game = Some(g);
                     app.screen = Screen::Play;
+                    // カウントダウン開始（0秒なら即開始）
+                    if app.cfg.countdown_sec > 0 {
+                        app.countdown_until = Some(Instant::now() + Duration::from_secs(app.cfg.countdown_sec));
+                    } else {
+                        app.countdown_until = None;
+                        if let Some(g) = &mut app.game { g.begin_now(); }
+                    }
                 }
                 KeyCode::Char('r') => app.screen = Screen::Ranking,
                 KeyCode::Char('s') => app.screen = Screen::Settings,
@@ -135,6 +153,23 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>) -> Result<()
                     _ => {}
                 }
             } else if let Some(g) = &mut app.game {
+                // カウントダウン中はESCのみ受け付け、それ以外は無視
+                if app.countdown_until.is_some() {
+                    if matches!(key.code, KeyCode::Esc) {
+                        let finished = g.handle_key(key)?;
+                        if finished {
+                            if g.aborted() {
+                                // 中断：保存しないでトップへ
+                                app.game = None;
+                                app.last_result = None;
+                                app.rec_prompt = None;
+                                app.screen = Screen::Top;
+                                app.countdown_until = None;
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
                 let finished = g.handle_key(key)?;
                 if finished {
                     if g.aborted() {
@@ -143,6 +178,7 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>) -> Result<()
                         app.last_result = None;
                         app.rec_prompt = None;
                         app.screen = Screen::Top;
+                        app.countdown_until = None;
                     } else {
                         let record = g.finish_record();
                         let (rank_in, is_new) = app.scorebook.insert_and_rank(record.clone());
@@ -184,6 +220,8 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>) -> Result<()
                 KeyCode::Char('f') | KeyCode::Char('F') => { app.cfg.fixed_chars = !app.cfg.fixed_chars; app.cfg.save()?; }
                 KeyCode::Char(']') => { app.cfg.target_chars = (app.cfg.target_chars + 50).min(2000); app.cfg.save()?; }
                 KeyCode::Char('[') => { app.cfg.target_chars = app.cfg.target_chars.saturating_sub(50).max(50); app.cfg.save()?; }
+                KeyCode::Char('c') | KeyCode::Char('C') => { app.cfg.countdown_sec = (app.cfg.countdown_sec + 1).min(10); app.cfg.save()?; }
+                KeyCode::Char('x') | KeyCode::Char('X') => { app.cfg.countdown_sec = app.cfg.countdown_sec.saturating_sub(1).min(10); app.cfg.save()?; }
                 _ => {}
             }
         }

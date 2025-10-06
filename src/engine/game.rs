@@ -152,6 +152,15 @@ impl Game {
         }
     }
 
+    // 明示的に計測を開始（カウントダウン後に呼び出し）
+    pub fn begin_now(&mut self) {
+        if self.started_at.is_none() {
+            let now = Instant::now();
+            self.started_at = Some(now);
+            self.word_start = Some(now);
+        }
+    }
+
     pub fn on_tick(&mut self) {
         if self.finished { return; }
         let t = self.elapsed_secs();
