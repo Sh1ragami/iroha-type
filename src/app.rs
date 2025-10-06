@@ -101,7 +101,15 @@ pub fn run(terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<std::io::S
                     if rep.playing {
                         rep.time += tick_rate.as_secs_f64() * rep.speed;
                         if let Some(evs) = &rec.replay {
+                            // advance event index based on elapsed time
                             while rep.ev_idx + 1 < evs.len() && evs[rep.ev_idx + 1].t <= rep.time { rep.ev_idx += 1; }
+                            // loop replay when reaching the end
+                            if let Some(last) = evs.last() {
+                                if rep.ev_idx + 1 >= evs.len() && rep.time >= last.t {
+                                    rep.time = 0.0;
+                                    rep.ev_idx = 0;
+                                }
+                            }
                         }
                     }
                 }
@@ -192,7 +200,11 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>) -> Result<()
         Screen::Ranking => {
             match key.code {
                 KeyCode::Esc => app.screen = Screen::Top,
-                KeyCode::Enter => { app.screen = Screen::Details; if app.replay.is_none() { app.replay = Some(ReplayState::default()); } },
+                KeyCode::Enter => {
+                    app.screen = Screen::Details;
+                    // Reset replay every time we open details to avoid stale progress
+                    app.replay = Some(ReplayState::default());
+                },
                 _ => {}
             }
         }
@@ -201,8 +213,42 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>) -> Result<()
                 KeyCode::Esc => app.screen = Screen::Top,
                 KeyCode::Char('r') => app.screen = Screen::Ranking,
                 KeyCode::Char(' ') => { if let Some(rep)=&mut app.replay { rep.playing = !rep.playing; } },
-                KeyCode::Left => { if let Some(rep)=&mut app.replay { rep.ev_idx = rep.ev_idx.saturating_sub(1); rep.playing=false; } },
-                KeyCode::Right => { if let Some(rep)=&mut app.replay { rep.ev_idx = rep.ev_idx.saturating_add(1); rep.playing=false; } },
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    if let Some(rep) = &mut app.replay {
+                        rep.ev_idx = 0;
+                        rep.time = 0.0;
+                        rep.playing = true;
+                    }
+                },
+                KeyCode::Left => {
+                    if let (Some(rep), Some(rec)) = (&mut app.replay, &app.last_result) {
+                        if let Some(evs) = &rec.replay {
+                            // Move one event back and sync time to the new event
+                            let new_idx = rep.ev_idx.saturating_sub(1).min(evs.len().saturating_sub(1));
+                            rep.ev_idx = new_idx;
+                            rep.time = if evs.is_empty() { 0.0 } else { evs[new_idx].t };
+                            rep.playing = false;
+                        } else {
+                            rep.ev_idx = rep.ev_idx.saturating_sub(1);
+                            rep.playing = false;
+                        }
+                    }
+                },
+                KeyCode::Right => {
+                    if let (Some(rep), Some(rec)) = (&mut app.replay, &app.last_result) {
+                        if let Some(evs) = &rec.replay {
+                            // Move one event forward (bounded) and sync time to the new event
+                            let mut new_idx = rep.ev_idx.saturating_add(1);
+                            if !evs.is_empty() { new_idx = new_idx.min(evs.len()-1); }
+                            rep.ev_idx = new_idx;
+                            rep.time = if evs.is_empty() { 0.0 } else { evs[new_idx].t };
+                            rep.playing = false;
+                        } else {
+                            rep.ev_idx = rep.ev_idx.saturating_add(1);
+                            rep.playing = false;
+                        }
+                    }
+                },
                 KeyCode::Char('+') => { if let Some(rep)=&mut app.replay { rep.speed = (rep.speed*1.25).min(4.0);} },
                 KeyCode::Char('-') => { if let Some(rep)=&mut app.replay { rep.speed = (rep.speed/1.25).max(0.25);} },
                 _ => {}

@@ -77,8 +77,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         let chart_area = Rect { x: mid[2].x, y: mid[2].y + mid[2].height.saturating_sub(8), width: mid[2].width, height: 8 };
         super::chart::draw_speed_chart(f, chart_area, rec);
 
-        // Footer
-        f.render_widget(Paragraph::new("Space: 再生/停止  ←/→: 1打進む  +/-: 再生速度  Legend: *=miss, 緑=入力済, 赤=次の正解"), v[3]);
+        // Footer (legend removed, add restart hint)
+        f.render_widget(Paragraph::new("Space: 再生/停止  ←/→: 1打進む  +/-: 再生速度  S: 最初から"), v[3]);
     }
 }
 
