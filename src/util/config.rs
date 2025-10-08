@@ -2,6 +2,10 @@ use std::{fs, path::PathBuf};
 use anyhow::Result;
 use serde::{Serialize, Deserialize};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundMode { Off, Miss, All }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub loss_ms_per_miss: u64,
@@ -12,10 +16,12 @@ pub struct AppConfig {
     #[serde(default = "default_fixed_chars")] pub fixed_chars: bool,
     #[serde(default = "default_target_chars")] pub target_chars: u32,
     #[serde(default = "default_countdown_sec")] pub countdown_sec: u64,
+    #[serde(default = "default_sound_enabled")] pub sound_enabled: bool,
+    #[serde(default = "default_sound_mode")] pub sound_mode: SoundMode,
 }
 
 impl Default for AppConfig {
-    fn default() -> Self { Self{ loss_ms_per_miss: 200, theme: "default".into(), app_name: default_app_name(), stage_w: default_stage_w(), stage_h: default_stage_h(), fixed_chars: default_fixed_chars(), target_chars: default_target_chars(), countdown_sec: default_countdown_sec() } }
+    fn default() -> Self { Self{ loss_ms_per_miss: 200, theme: "default".into(), app_name: default_app_name(), stage_w: default_stage_w(), stage_h: default_stage_h(), fixed_chars: default_fixed_chars(), target_chars: default_target_chars(), countdown_sec: default_countdown_sec(), sound_enabled: default_sound_enabled(), sound_mode: default_sound_mode() } }
 }
 
 impl AppConfig {
@@ -33,3 +39,5 @@ fn default_fixed_chars() -> bool { true }
 fn default_target_chars() -> u32 { 400 }
 fn default_app_name() -> String { "IrohaType".into() }
 fn default_countdown_sec() -> u64 { 3 }
+fn default_sound_enabled() -> bool { true }
+fn default_sound_mode() -> SoundMode { SoundMode::All }

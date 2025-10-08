@@ -10,7 +10,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         .constraints([Constraint::Length(1), Constraint::Min(1)])
         .split(stage);
 
-    let header = Paragraph::new("[←/→]幅  [↑/↓]高  [+/-]ロスms  [F]固定打鍵  [[]/]]打鍵数  [C/X]CD秒  [ESC]戻る  — 設定")
+    let header = Paragraph::new("[←/→]幅  [↑/↓]高  [+/-]ロスms  [F]固定打鍵  [[]/]]打鍵数  [C/X]CD秒  [M]サウンド  [O]音モード  [ESC]戻る  — 設定")
         .block(Block::default().borders(Borders::NONE));
     f.render_widget(header, v[0]);
 
@@ -22,6 +22,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         Row::new(vec![Cell::from("fixed_chars"), Cell::from(app.cfg.fixed_chars.to_string())]),
         Row::new(vec![Cell::from("target_chars"), Cell::from(app.cfg.target_chars.to_string())]),
         Row::new(vec![Cell::from("countdown_sec"), Cell::from(app.cfg.countdown_sec.to_string())]),
+        Row::new(vec![Cell::from("sound_enabled"), Cell::from(if app.cfg.sound_enabled { "true" } else { "false" })]),
+        Row::new(vec![Cell::from("sound_mode"), Cell::from(match app.cfg.sound_mode { crate::util::config::SoundMode::Off=>"off", crate::util::config::SoundMode::Miss=>"miss", crate::util::config::SoundMode::All=>"all" })]),
         Row::new(vec![Cell::from("保存先"), Cell::from("data/")]),
     ];
     let table = Table::new(rows, [Constraint::Length(20), Constraint::Min(10)])
