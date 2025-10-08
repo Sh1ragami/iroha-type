@@ -43,6 +43,9 @@ pub fn load_words_from_str(data: &str) -> Result<Vec<WordEntry>> {
     Ok(wf.entries)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyFeedback { None, Type, Miss }
+
 fn min_roma_len(e: &WordEntry) -> usize {
     e.romas.iter().map(|s| s.len()).min().unwrap_or(0)
 }
@@ -86,6 +89,7 @@ pub struct Game {
     replay: Vec<KeyEv>,
     // Stores the romaji variant actually typed for each word (if completed)
     display_romas: Vec<Option<String>>,
+    last_feedback: KeyFeedback,
 }
 
 impl Game {
@@ -113,6 +117,7 @@ impl Game {
             last_miss_char: None,
             replay: vec![],
             display_romas: vec![None; dr_len],
+            last_feedback: KeyFeedback::None,
         })
     }
 
@@ -139,6 +144,7 @@ impl Game {
             last_miss_char: None,
             replay: vec![],
             display_romas: vec![None; dr_len],
+            last_feedback: KeyFeedback::None,
         })
     }
 
@@ -173,6 +179,7 @@ impl Game {
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Result<bool> {
         if self.finished { return Ok(true); }
+        self.last_feedback = KeyFeedback::None;
         match key.code {
             KeyCode::Esc => { self.aborted = true; self.finish(); return Ok(true); }
             KeyCode::Char(ch) => {
@@ -186,11 +193,13 @@ impl Game {
                     match m.input_char(c) {
                         super::romaji::InputResult::Correct => {
                             self.typed.push(c); self.correct_keystrokes+=1; self.last_miss_char=None; self.push_ev(c, true);
+                            self.last_feedback = KeyFeedback::Type;
                             if self.cfg.fixed_chars && (self.correct_keystrokes as usize) >= self.cfg.target_chars { self.finish(); return Ok(true); }
                         },
-                        super::romaji::InputResult::Miss => { self.miss+=1; self.penalize_time(); self.last_miss_char = Some(c); self.push_ev(c, false); },
+                        super::romaji::InputResult::Miss => { self.miss+=1; self.penalize_time(); self.last_miss_char = Some(c); self.push_ev(c, false); self.last_feedback = KeyFeedback::Miss; },
                         super::romaji::InputResult::Complete => {
                             self.typed.push(c); self.correct_keystrokes+=1; self.last_miss_char=None; self.push_ev(c, true);
+                            self.last_feedback = KeyFeedback::Type;
                             if self.cfg.fixed_chars && (self.correct_keystrokes as usize) >= self.cfg.target_chars { self.finish(); return Ok(true); }
                             self.finish_word();
                         },
@@ -357,6 +366,12 @@ impl Game {
     fn push_ev(&mut self, c: char, ok: bool) {
         let t = self.elapsed_secs();
         self.replay.push(KeyEv{ t, c: c.to_string(), ok, w: self.idx });
+    }
+
+    pub fn take_last_feedback(&mut self) -> KeyFeedback {
+        let fb = self.last_feedback;
+        self.last_feedback = KeyFeedback::None;
+        fb
     }
 
     // mark game as finished and freeze timer

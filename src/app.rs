@@ -10,6 +10,7 @@ use crate::store;
 use crate::util;
 
 use engine::game::{Game, GameConfig, WordEntry};
+use engine::game::KeyFeedback;
 use engine::romaji::RomajiRules;
 use store::json::{ScoreBook, ScoreRecord};
 // no name input
@@ -33,6 +34,7 @@ pub struct App {
     pub rec_prompt: Option<RecordPrompt>,
     pub rules: RomajiRules,
     pub countdown_until: Option<Instant>,
+    pub sound: Option<util::sound::SoundPlayer>,
 }
 
 #[derive(Clone, Copy)]
@@ -71,6 +73,7 @@ pub fn run(terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<std::io::S
         rec_prompt: None,
         rules: romaji_rules,
         countdown_until: None,
+        sound: util::sound::SoundPlayer::new().ok(),
     };
 
     let mut last_tick = Instant::now();
@@ -179,6 +182,21 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>) -> Result<()
                     return Ok(());
                 }
                 let finished = g.handle_key(key)?;
+                // play key feedback sound based on config (avoid double-borrow by using g directly)
+                if app.cfg.sound_enabled {
+                    let fb = g.take_last_feedback();
+                    if let Some(snd) = &app.sound {
+                        use crate::util::config::SoundMode::*;
+                        match (app.cfg.sound_mode, fb) {
+                            (Off, _) => {},
+                            (Miss, KeyFeedback::Miss) => { let _ = snd.play_miss(); },
+                            (Miss, _) => {},
+                            (All, KeyFeedback::Type) => { let _ = snd.play_type(); },
+                            (All, KeyFeedback::Miss) => { let _ = snd.play_miss(); },
+                            (All, KeyFeedback::None) => {},
+                        }
+                    }
+                }
                 if finished {
                     if g.aborted() {
                         // 中断：保存しないでトップへ
@@ -205,6 +223,12 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>) -> Result<()
                     // Reset replay every time we open details to avoid stale progress
                     app.replay = Some(ReplayState::default());
                 },
+                KeyCode::Char('m') | KeyCode::Char('M') => { app.cfg.sound_enabled = !app.cfg.sound_enabled; app.cfg.save()?; }
+                KeyCode::Char('o') | KeyCode::Char('O') => {
+                    use crate::util::config::SoundMode::*;
+                    app.cfg.sound_mode = match app.cfg.sound_mode { Off => Miss, Miss => All, All => Off };
+                    app.cfg.save()?;
+                }
                 _ => {}
             }
         }
@@ -268,6 +292,7 @@ fn handle_key(app: &mut App, key: KeyEvent, words: &Vec<WordEntry>) -> Result<()
                 KeyCode::Char('[') => { app.cfg.target_chars = app.cfg.target_chars.saturating_sub(50).max(50); app.cfg.save()?; }
                 KeyCode::Char('c') | KeyCode::Char('C') => { app.cfg.countdown_sec = (app.cfg.countdown_sec + 1).min(10); app.cfg.save()?; }
                 KeyCode::Char('x') | KeyCode::Char('X') => { app.cfg.countdown_sec = app.cfg.countdown_sec.saturating_sub(1).min(10); app.cfg.save()?; }
+                KeyCode::Char('m') | KeyCode::Char('M') => { app.cfg.sound_enabled = !app.cfg.sound_enabled; app.cfg.save()?; }
                 _ => {}
             }
         }
